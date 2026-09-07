@@ -17,7 +17,7 @@ UPLOAD_FOLDER = "./documents"
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# Thanh Sidebar
+# Thanh Sidebar Upload file
 with st.sidebar:
     st.markdown("### ✍️ **Tác giả:** Eira")
     st.divider()
@@ -37,7 +37,7 @@ with st.sidebar:
         st.cache_data.clear()
 
 
-# Hàm bỏ dấu siêu tốc
+# Hàm bỏ dấu tiếng Việt siêu tốc
 def remove_accents(input_str):
     if not isinstance(input_str, str):
         input_str = str(input_str)
@@ -58,7 +58,7 @@ STANDARD_HEADERS = [
 ]
 
 
-# Nạp và tiền xử lý toàn bộ dữ liệu thành 1 DataFrame lớn trong RAM
+# Nạp và tiền xử lý dữ liệu vào bộ nhớ RAM
 @st.cache_data
 def load_and_optimize_dataset(folder_path):
     records = []
@@ -119,7 +119,6 @@ def load_and_optimize_dataset(folder_path):
             ]
         )
 
-    # Chuyển đổi thành Pandas DataFrame để tối ưu hóa truy vấn bằng C
     return pd.DataFrame(records)
 
 
@@ -128,50 +127,41 @@ df_dataset = load_and_optimize_dataset(UPLOAD_FOLDER)
 total_rows = len(df_dataset)
 st.info(f"Hệ thống đã nạp **{total_rows}** dòng dữ liệu sẵn sàng tìm kiếm.")
 
-# Ô nhập dữ liệu
+# Ô nhập dữ liệu (Cập nhật trực tiếp khi gõ)
 query = st.text_input(
-    "Nhập từ khóa tra cứu (Tự động cập nhật kết quả siêu tốc):",
-    placeholder="Ví dụ: dau moi, 227, ban chinh sach tin dung...",
+    "Nhập từ khóa tra cứu (Kết quả nhảy liên tục theo từng phím gõ):",
+    placeholder="Gõ từ khóa vào đây...",
 )
 
-if query.strip() and not df_dataset.empty:
-    norm_query = remove_accents(query.strip())
+if query and not df_dataset.empty:
+    norm_query = remove_accents(query)
     keywords = norm_query.split()
 
-    # Xây dựng regex Lookahead giúp quét siêu tốc toàn bộ tập dữ liệu cùng lúc
-    # Mẫu Regex: (?=.*tu1)(?=.*tu2)(?=.*tu3)
-    regex_pattern = "".join([f"(?=.*{re.escape(k)})" for k in keywords])
+    if keywords:
+        # Tìm kiếm bằng Regex Lookahead cực nhanh trên Ma trận dữ liệu C
+        regex_pattern = "".join([f"(?=.*{re.escape(k)})" for k in keywords])
+        mask = df_dataset["search_text"].str.contains(
+            regex_pattern, regex=True, na=False
+        )
+        matched_df = df_dataset[mask]
 
-    # Lọc dữ liệu bằng C-Engine của Pandas (tốc độ ánh sáng)
-    mask = df_dataset["search_text"].str.contains(
-        regex_pattern, regex=True, na=False
-    )
-    matched_df = df_dataset[mask]
+        total_found = len(matched_df)
 
-    total_found = len(matched_df)
+        if total_found > 0:
+            st.success(f"⚡ Tìm thấy **{total_found}** kết quả:")
 
-    if total_found > 0:
-        st.success(f"⚡ Tìm thấy **{total_found}** kết quả phù hợp:")
+            # Lấy tối đa 30 kết quả đầu tiên để render siêu tốc
+            display_records = matched_df.head(30).to_dict("records")
 
-        # Giới hạn hiển thị 50 kết quả đầu tiên nếu tìm thấy quá nhiều để giao diện không bị giật
-        display_records = matched_df.head(50).to_dict("records")
+            for res in display_records:
+                title_label = f"📄 File: {res['file_name']} | Sheet: {res['sheet']} | Dòng: {res['row_index']}"
+                with st.expander(f"📌 **{title_label}**"):
+                    for col_title, val in res["data_dict"].items():
+                        st.write(f"- **{col_title}:** {val}")
 
-        for res in display_records:
-            title_label = f"📄 File: {res['file_name']} | Sheet: {res['sheet']} | Dòng: {res['row_index']}"
-            with st.expander(f"📌 **{title_label}**"):
-                # Bảng chi tiết
-                st.dataframe(
-                    pd.DataFrame([res["data_dict"]]), use_container_width=True
+            if total_found > 30:
+                st.caption(
+                    f"💡 Đang hiển thị 30/{total_found} kết quả. Hãy gõ tiếp để thu hẹp tìm kiếm."
                 )
-
-                # Danh sách văn bản
-                st.markdown("**Chi tiết nội dung:**")
-                for col_title, val in res["data_dict"].items():
-                    st.write(f"- **{col_title}:** {val}")
-
-        if total_found > 50:
-            st.info(
-                f"Đang hiển thị 50/{total_found} kết quả đầu tiên. Hãy gõ thêm từ khóa chi tiết hơn để thu hẹp tìm kiếm."
-            )
-    else:
-        st.warning("Không tìm thấy kết quả phù hợp.")
+        else:
+            st.warning("Không tìm thấy kết quả phù hợp.")
