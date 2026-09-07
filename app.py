@@ -5,17 +5,23 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-    page_title="Tra Cứu Bộ Câu Hỏi Nâng Cao", page_icon="📝", layout="wide"
+    page_title="Tra Cứu Bộ Câu Hỏi - Tác giả Eira",
+    page_icon="📝",
+    layout="wide",
 )
 
+# Tiêu đề chính và Thông tin Tác giả
 st.title("📝 Hệ Thống Tra Cứu Câu Hỏi & Đáp Án")
+st.caption("✨ **Tác giả:** Eira")  # Dòng hiển thị tên tác giả
 
 UPLOAD_FOLDER = "./documents"
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# Thanh Sidebar Upload file
+# Thanh Sidebar Upload file & Tác giả
 with st.sidebar:
+    st.markdown("### ✍️ **Tác giả:** Eira")
+    st.divider()
     st.header("📁 Tải tệp lên hệ thống")
     uploaded_files = st.file_uploader(
         "Chọn tệp Excel (.xlsx, .xls)",
@@ -89,7 +95,6 @@ def load_all_excel_data(folder_path):
                         continue
 
                     if clean_dict:
-                        # Ghép tất cả văn bản trong dòng thành 1 chuỗi để tìm kiếm
                         full_row_text = " ".join(clean_dict.values())
                         normalized_text = remove_accents(full_row_text)
 
@@ -120,11 +125,9 @@ query = st.text_input(
 )
 
 if query.strip():
-    # Chuẩn hóa từ khóa tìm kiếm
     norm_query = remove_accents(query.strip())
-    keywords = norm_query.split()  # Tách từ khóa thành từng từ đơn lẻ
+    keywords = norm_query.split()
 
-    # Lọc kết quả: Dòng dữ liệu phải chứa TẤT CẢ các từ đơn lẻ đã gõ
     matched_results = []
     for item in dataset:
         if all(word in item["normalized_text"] for word in keywords):
@@ -136,11 +139,9 @@ if query.strip():
         for res in matched_results:
             title_label = f"📄 File: {res['file_name']} | Sheet: {res['sheet']} | Dòng: {res['row_index']}"
             with st.expander(f"📌 **{title_label}**"):
-                # Hiển thị dạng bảng
                 df_display = pd.DataFrame([res["data_dict"]])
                 st.dataframe(df_display, use_container_width=True)
 
-                # Hiển thị dạng danh sách chi tiết
                 st.markdown("**Nội dung chi tiết:**")
                 for col_title, val in res["data_dict"].items():
                     st.write(f"- **{col_title}:** {val}")
