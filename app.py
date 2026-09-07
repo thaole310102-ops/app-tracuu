@@ -5,10 +5,29 @@ import pandas as pd
 import streamlit as st
 from st_keyup import st_keyup
 
+# 1. Cấu hình trang
 st.set_page_config(
     page_title="Tra Cứu Chính Xác - Tác giả Eira",
     page_icon="🎯",
     layout="wide",
+)
+
+# 2. Mã CSS ẩn thông tin tài khoản & menu
+st.markdown(
+    """
+    <style>
+    /* Ẩn Footer mặc định của Streamlit */
+    footer {visibility: hidden;}
+    
+    /* Ẩn phần thông tin người dùng ở Sidebar & Viewer Badge */
+    div[data-testid="stSidebarUserContent"] {display: none;}
+    section[data-testid="stSidebar"] div[class*="viewerBadge"] {display: none;}
+    div[data-testid="stHeader"] {visibility: hidden;}
+    
+    #MainMenu {visibility: hidden;}
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 st.title("🎯 Hệ Thống Tra Cứu Câu Hỏi & Đáp Án")
