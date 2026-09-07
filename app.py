@@ -5,20 +5,19 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-    page_title="Tra Cứu Bộ Câu Hỏi - Tác giả Eira",
-    page_icon="📝",
+    page_title="Tra Cứu Tốc Độ Cao - Tác giả Eira",
+    page_icon="⚡",
     layout="wide",
 )
 
-# Tiêu đề chính và Thông tin Tác giả
-st.title("📝 Hệ Thống Tra Cứu Câu Hỏi & Đáp Án")
-st.caption("✨ **Tác giả:** Eira")  # Dòng hiển thị tên tác giả
+st.title("⚡ Hệ Thống Tra Cứu Tốc Độ Cao")
+st.caption("✨ **Tác giả:** Eira")
 
 UPLOAD_FOLDER = "./documents"
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# Thanh Sidebar Upload file & Tác giả
+# Thanh Sidebar
 with st.sidebar:
     st.markdown("### ✍️ **Tác giả:** Eira")
     st.divider()
@@ -35,13 +34,14 @@ with st.sidebar:
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
         st.success(f"Đã lưu {len(uploaded_files)} tệp!")
-        st.cache_data.clear()  # Xóa cache để cập nhật dữ liệu mới
+        st.cache_data.clear()
 
 
-# Hàm chuẩn hóa chuỗi: Bỏ dấu tiếng Việt, đưa về chữ thường
+# Hàm bỏ dấu siêu tốc
 def remove_accents(input_str):
     if not isinstance(input_str, str):
         input_str = str(input_str)
+    input_str = input_str.replace("đ", "d").replace("Đ", "d")
     nfkd_form = unicodedata.normalize("NFKD", input_str)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
@@ -58,10 +58,10 @@ STANDARD_HEADERS = [
 ]
 
 
-# Dùng cache_data để lưu dữ liệu vào bộ nhớ tạm, tăng tốc độ tìm kiếm tức thì
+# Nạp và tiền xử lý toàn bộ dữ liệu thành 1 DataFrame lớn trong RAM
 @st.cache_data
-def load_all_excel_data(folder_path):
-    all_data = []
+def load_and_optimize_dataset(folder_path):
+    records = []
     files = [
         f
         for f in os.listdir(folder_path)
@@ -96,54 +96,82 @@ def load_all_excel_data(folder_path):
 
                     if clean_dict:
                         full_row_text = " ".join(clean_dict.values())
-                        normalized_text = remove_accents(full_row_text)
-
-                        all_data.append(
+                        records.append(
                             {
                                 "file_name": file_name,
                                 "sheet": sheet_name,
                                 "row_index": idx + 1,
                                 "data_dict": clean_dict,
-                                "normalized_text": normalized_text,
+                                "search_text": remove_accents(full_row_text),
                             }
                         )
-        except Exception as e:
+        except Exception:
             pass
-    return all_data
+
+    if not records:
+        return pd.DataFrame(
+            columns=[
+                "file_name",
+                "sheet",
+                "row_index",
+                "data_dict",
+                "search_text",
+            ]
+        )
+
+    # Chuyển đổi thành Pandas DataFrame để tối ưu hóa truy vấn bằng C
+    return pd.DataFrame(records)
 
 
-# Tải toàn bộ dữ liệu vào bộ nhớ
-dataset = load_all_excel_data(UPLOAD_FOLDER)
-st.info(
-    f"Hệ thống đã sẵn sàng tìm kiếm trên **{len(dataset)}** câu hỏi/dòng dữ liệu."
-)
+# Tải toàn bộ dữ liệu
+df_dataset = load_and_optimize_dataset(UPLOAD_FOLDER)
+total_rows = len(df_dataset)
+st.info(f"Hệ thống đã nạp **{total_rows}** dòng dữ liệu sẵn sàng tìm kiếm.")
 
-# Ô nhập liệu tự động cập nhật kết quả theo từng ký tự gõ
+# Ô nhập dữ liệu
 query = st.text_input(
-    "Nhập từ khóa cần tìm (gõ không dấu, gõ tắt hoặc gõ từ rời rạc đều được):",
-    placeholder="Ví dụ: bao lanh tsc, thanh toan quoc te, 226...",
+    "Nhập từ khóa tra cứu (Tự động cập nhật kết quả siêu tốc):",
+    placeholder="Ví dụ: dau moi, 227, ban chinh sach tin dung...",
 )
 
-if query.strip():
+if query.strip() and not df_dataset.empty:
     norm_query = remove_accents(query.strip())
     keywords = norm_query.split()
 
-    matched_results = []
-    for item in dataset:
-        if all(word in item["normalized_text"] for word in keywords):
-            matched_results.append(item)
+    # Xây dựng regex Lookahead giúp quét siêu tốc toàn bộ tập dữ liệu cùng lúc
+    # Mẫu Regex: (?=.*tu1)(?=.*tu2)(?=.*tu3)
+    regex_pattern = "".join([f"(?=.*{re.escape(k)})" for k in keywords])
 
-    if matched_results:
-        st.success(f"Tìm thấy **{len(matched_results)}** kết quả phù hợp:")
+    # Lọc dữ liệu bằng C-Engine của Pandas (tốc độ ánh sáng)
+    mask = df_dataset["search_text"].str.contains(
+        regex_pattern, regex=True, na=False
+    )
+    matched_df = df_dataset[mask]
 
-        for res in matched_results:
+    total_found = len(matched_df)
+
+    if total_found > 0:
+        st.success(f"⚡ Tìm thấy **{total_found}** kết quả phù hợp:")
+
+        # Giới hạn hiển thị 50 kết quả đầu tiên nếu tìm thấy quá nhiều để giao diện không bị giật
+        display_records = matched_df.head(50).to_dict("records")
+
+        for res in display_records:
             title_label = f"📄 File: {res['file_name']} | Sheet: {res['sheet']} | Dòng: {res['row_index']}"
             with st.expander(f"📌 **{title_label}**"):
-                df_display = pd.DataFrame([res["data_dict"]])
-                st.dataframe(df_display, use_container_width=True)
+                # Bảng chi tiết
+                st.dataframe(
+                    pd.DataFrame([res["data_dict"]]), use_container_width=True
+                )
 
-                st.markdown("**Nội dung chi tiết:**")
+                # Danh sách văn bản
+                st.markdown("**Chi tiết nội dung:**")
                 for col_title, val in res["data_dict"].items():
                     st.write(f"- **{col_title}:** {val}")
+
+        if total_found > 50:
+            st.info(
+                f"Đang hiển thị 50/{total_found} kết quả đầu tiên. Hãy gõ thêm từ khóa chi tiết hơn để thu hẹp tìm kiếm."
+            )
     else:
-        st.warning("Không tìm thấy kết quả nào phù hợp với từ khóa trên.")
+        st.warning("Không tìm thấy kết quả phù hợp.")
