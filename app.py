@@ -12,19 +12,21 @@ st.set_page_config(
     layout="wide",
 )
 
-# 2. Mã CSS ẩn thông tin tài khoản & menu
+# 2. Mã CSS sửa lỗi: Giữ lại menu chức năng, chỉ ẩn footer & thông tin tài khoản
 st.markdown(
     """
     <style>
     /* Ẩn Footer mặc định của Streamlit */
     footer {visibility: hidden;}
     
-    /* Ẩn phần thông tin người dùng ở Sidebar & Viewer Badge */
-    div[data-testid="stSidebarUserContent"] {display: none;}
-    section[data-testid="stSidebar"] div[class*="viewerBadge"] {display: none;}
-    div[data-testid="stHeader"] {visibility: hidden;}
-    
+    /* Ẩn thanh biểu tượng Streamlit góc trên bên phải */
     #MainMenu {visibility: hidden;}
+    
+    /* Ẩn chỉ riêng phần thông tin Profile/Email đăng nhập dưới góc Sidebar */
+    section[data-testid="stSidebar"] div[class*="viewerBadge"],
+    section[data-testid="stSidebar"] div[class*="profile"] {
+        display: none !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
