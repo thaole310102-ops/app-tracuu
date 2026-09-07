@@ -1,11 +1,11 @@
 import os
-import docx
+import re
+import unicodedata
 import pandas as pd
-import PyPDF2
 import streamlit as st
 
 st.set_page_config(
-    page_title="Tra Cứu Bộ Câu Hỏi Excel", page_icon="📝", layout="wide"
+    page_title="Tra Cứu Bộ Câu Hỏi Nâng Cao", page_icon="📝", layout="wide"
 )
 
 st.title("📝 Hệ Thống Tra Cứu Câu Hỏi & Đáp Án")
@@ -18,8 +18,8 @@ if not os.path.exists(UPLOAD_FOLDER):
 with st.sidebar:
     st.header("📁 Tải tệp lên hệ thống")
     uploaded_files = st.file_uploader(
-        "Chọn tệp Excel (.xlsx, .xls) hoặc Word/PDF",
-        type=["xlsx", "xls", "docx", "pdf", "txt"],
+        "Chọn tệp Excel (.xlsx, .xls)",
+        type=["xlsx", "xls"],
         accept_multiple_files=True,
     )
 
@@ -29,8 +29,17 @@ with st.sidebar:
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
         st.success(f"Đã lưu {len(uploaded_files)} tệp!")
+        st.cache_data.clear()  # Xóa cache để cập nhật dữ liệu mới
 
-# Danh sách tiêu đề chuẩn bắt buộc hiển thị
+
+# Hàm chuẩn hóa chuỗi: Bỏ dấu tiếng Việt, đưa về chữ thường
+def remove_accents(input_str):
+    if not isinstance(input_str, str):
+        input_str = str(input_str)
+    nfkd_form = unicodedata.normalize("NFKD", input_str)
+    return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
+
+
 STANDARD_HEADERS = [
     "STT",
     "CÂU HỎI",
@@ -43,34 +52,36 @@ STANDARD_HEADERS = [
 ]
 
 
-def search_in_excel(filepath, query):
-    results = []
-    try:
-        excel_data = pd.read_excel(filepath, sheet_name=None, header=None)
+# Dùng cache_data để lưu dữ liệu vào bộ nhớ tạm, tăng tốc độ tìm kiếm tức thì
+@st.cache_data
+def load_all_excel_data(folder_path):
+    all_data = []
+    files = [
+        f
+        for f in os.listdir(folder_path)
+        if f.endswith((".xlsx", ".xls")) and not f.startswith("~$")
+    ]
 
-        for sheet_name, df in excel_data.items():
-            df = df.fillna("")
-
-            # Lặp qua từng dòng dữ liệu trong Excel
-            for idx, row in df.iterrows():
-                # Bỏ qua các dòng tiêu đề chung ở đầu trang (chứa chữ BỘ CÂU HỎI, ĐỘC LẬP - TỰ DO...)
-                row_str = " ".join([str(val) for val in row.values])
-
-                if query.lower() in row_str.lower():
-                    # Tạo danh sách các giá trị không bị rỗng trong dòng
+    for file_name in files:
+        file_path = os.path.join(folder_path, file_name)
+        try:
+            excel_data = pd.read_excel(file_path, sheet_name=None, header=None)
+            for sheet_name, df in excel_data.items():
+                df = df.fillna("")
+                for idx, row in df.iterrows():
                     raw_values = [str(val).strip() for val in row.values]
 
-                    # Áp tiêu đề chuẩn tương ứng với từng cột
                     clean_dict = {}
                     for i, val in enumerate(raw_values):
                         if val and val.lower() != "nan":
-                            if i < len(STANDARD_HEADERS):
-                                header_name = STANDARD_HEADERS[i]
-                            else:
-                                header_name = f"Thông tin thêm {i+1}"
+                            header_name = (
+                                STANDARD_HEADERS[i]
+                                if i < len(STANDARD_HEADERS)
+                                else f"Thông tin {i+1}"
+                            )
                             clean_dict[header_name] = val
 
-                    # Bỏ qua dòng nếu chỉ chứa tiêu đề file
+                    # Bỏ các dòng tiêu đề trùng lặp
                     if (
                         "STT" in clean_dict.values()
                         or "CÂU HỎI" in clean_dict.values()
@@ -78,64 +89,60 @@ def search_in_excel(filepath, query):
                         continue
 
                     if clean_dict:
-                        # Tạo dataframe hiển thị đẹp
-                        display_df = pd.DataFrame([clean_dict])
-                        results.append(
+                        # Ghép tất cả văn bản trong dòng thành 1 chuỗi để tìm kiếm
+                        full_row_text = " ".join(clean_dict.values())
+                        normalized_text = remove_accents(full_row_text)
+
+                        all_data.append(
                             {
+                                "file_name": file_name,
                                 "sheet": sheet_name,
                                 "row_index": idx + 1,
                                 "data_dict": clean_dict,
-                                "raw_row_df": display_df,
+                                "normalized_text": normalized_text,
                             }
                         )
-    except Exception as e:
-        st.error(f"Lỗi đọc file Excel {filepath}: {e}")
-    return results
+        except Exception as e:
+            pass
+    return all_data
 
 
-# Danh sách tệp
-all_files = [
-    f
-    for f in os.listdir(UPLOAD_FOLDER)
-    if f.endswith((".xlsx", ".xls", ".docx", ".pdf", ".txt"))
-]
-st.info(f"Số lượng file trong hệ thống: **{len(all_files)}** file")
-
-# Ô tìm kiếm từ khóa
-query = st.text_input(
-    "Nhập câu hỏi hoặc từ khóa cần tra đáp án:",
-    placeholder="Ví dụ: Ban Chính sách Tín dụng, Thanh toán quốc tế...",
+# Tải toàn bộ dữ liệu vào bộ nhớ
+dataset = load_all_excel_data(UPLOAD_FOLDER)
+st.info(
+    f"Hệ thống đã sẵn sàng tìm kiếm trên **{len(dataset)}** câu hỏi/dòng dữ liệu."
 )
 
-if query:
-    total_found = 0
+# Ô nhập liệu tự động cập nhật kết quả theo từng ký tự gõ
+query = st.text_input(
+    "Nhập từ khóa cần tìm (gõ không dấu, gõ tắt hoặc gõ từ rời rạc đều được):",
+    placeholder="Ví dụ: bao lanh tsc, thanh toan quoc te, 226...",
+)
 
-    for file_name in all_files:
-        file_path = os.path.join(UPLOAD_FOLDER, file_name)
+if query.strip():
+    # Chuẩn hóa từ khóa tìm kiếm
+    norm_query = remove_accents(query.strip())
+    keywords = norm_query.split()  # Tách từ khóa thành từng từ đơn lẻ
 
-        if file_name.endswith((".xlsx", ".xls")):
-            excel_results = search_in_excel(file_path, query)
+    # Lọc kết quả: Dòng dữ liệu phải chứa TẤT CẢ các từ đơn lẻ đã gõ
+    matched_results = []
+    for item in dataset:
+        if all(word in item["normalized_text"] for word in keywords):
+            matched_results.append(item)
 
-            if excel_results:
-                total_found += len(excel_results)
-                st.subheader(
-                    f"📄 File: `{file_name}` — Tìm thấy {len(excel_results)} kết quả"
-                )
+    if matched_results:
+        st.success(f"Tìm thấy **{len(matched_results)}** kết quả phù hợp:")
 
-                for res in excel_results:
-                    with st.expander(
-                        f"📌 **Sheet [{res['sheet']}] - Dòng {res['row_index']}**"
-                    ):
-                        # 1. Bảng dữ liệu chuẩn tiêu đề
-                        st.markdown("**Bảng thông tin chi tiết:**")
-                        st.dataframe(
-                            res["raw_row_df"], use_container_width=True
-                        )
+        for res in matched_results:
+            title_label = f"📄 File: {res['file_name']} | Sheet: {res['sheet']} | Dòng: {res['row_index']}"
+            with st.expander(f"📌 **{title_label}**"):
+                # Hiển thị dạng bảng
+                df_display = pd.DataFrame([res["data_dict"]])
+                st.dataframe(df_display, use_container_width=True)
 
-                        # 2. Danh sách tóm tắt từng mục
-                        st.markdown("**Nội dung chi tiết:**")
-                        for col_title, val in res["data_dict"].items():
-                            st.write(f"- **{col_title}:** {val}")
-
-    if total_found == 0:
-        st.warning("Không tìm thấy câu hỏi/dòng nào chứa từ khóa trên.")
+                # Hiển thị dạng danh sách chi tiết
+                st.markdown("**Nội dung chi tiết:**")
+                for col_title, val in res["data_dict"].items():
+                    st.write(f"- **{col_title}:** {val}")
+    else:
+        st.warning("Không tìm thấy kết quả nào phù hợp với từ khóa trên.")

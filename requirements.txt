@@ -3,3 +3,6 @@ pandas
 openpyxl
 python-docx
 pypdf2
+streamlit
+pandas
+openpyxl
