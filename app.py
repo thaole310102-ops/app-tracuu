@@ -3,23 +3,31 @@ import re
 import unicodedata
 import pandas as pd
 import streamlit as st
+from st_keyup import st_keyup
 
 st.set_page_config(
-    page_title="Tra Cứu Tốc Độ Cao - Tác giả Eira",
-    page_icon="⚡",
+    page_title="Tra Cứu Chính Xác - Tác giả Eira",
+    page_icon="🎯",
     layout="wide",
 )
 
-st.title("⚡ Hệ Thống Tra Cứu Tốc Độ Cao")
+st.title("🎯 Hệ Thống Tra Cứu Câu Hỏi & Đáp Án")
 st.caption("✨ **Tác giả:** Eira")
 
 UPLOAD_FOLDER = "./documents"
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# Thanh Sidebar Upload file
+# Thanh Sidebar Upload file & Cấu hình
 with st.sidebar:
     st.markdown("### ✍️ **Tác giả:** Eira")
+    st.divider()
+    st.header("⚙️ Chế độ tra cứu")
+    search_mode = st.radio(
+        "Phạm vi tìm kiếm:",
+        ["Chỉ tìm trong CÂU HỎI (Khuyên dùng)", "Tìm trong TOÀN BỘ (Cả Đáp án)"],
+        index=0,
+    )
     st.divider()
     st.header("📁 Tải tệp lên hệ thống")
     uploaded_files = st.file_uploader(
@@ -37,7 +45,7 @@ with st.sidebar:
         st.cache_data.clear()
 
 
-# Hàm bỏ dấu tiếng Việt siêu tốc
+# Hàm bỏ dấu tiếng Việt chuẩn xác
 def remove_accents(input_str):
     if not isinstance(input_str, str):
         input_str = str(input_str)
@@ -58,7 +66,7 @@ STANDARD_HEADERS = [
 ]
 
 
-# Nạp và tiền xử lý dữ liệu vào bộ nhớ RAM
+# Tách riêng trường văn bản CÂU HỎI và NỘI DUNG KHÁC
 @st.cache_data
 def load_and_optimize_dataset(folder_path):
     records = []
@@ -78,6 +86,9 @@ def load_and_optimize_dataset(folder_path):
                     raw_values = [str(val).strip() for val in row.values]
 
                     clean_dict = {}
+                    question_text = ""
+                    other_text = ""
+
                     for i, val in enumerate(raw_values):
                         if val and val.lower() != "nan":
                             header_name = (
@@ -86,6 +97,12 @@ def load_and_optimize_dataset(folder_path):
                                 else f"Thông tin {i+1}"
                             )
                             clean_dict[header_name] = val
+
+                            # Phân loại: Lấy riêng CÂU HỎI (thường nằm ở cột 2 - index 1)
+                            if header_name == "CÂU HỎI" or i == 1:
+                                question_text += " " + val
+                            else:
+                                other_text += " " + val
 
                     # Bỏ các dòng tiêu đề trùng lặp
                     if (
@@ -102,7 +119,8 @@ def load_and_optimize_dataset(folder_path):
                                 "sheet": sheet_name,
                                 "row_index": idx + 1,
                                 "data_dict": clean_dict,
-                                "search_text": remove_accents(full_row_text),
+                                "question_search": remove_accents(question_text),
+                                "full_search": remove_accents(full_row_text),
                             }
                         )
         except Exception:
@@ -115,7 +133,8 @@ def load_and_optimize_dataset(folder_path):
                 "sheet",
                 "row_index",
                 "data_dict",
-                "search_text",
+                "question_search",
+                "full_search",
             ]
         )
 
@@ -125,12 +144,14 @@ def load_and_optimize_dataset(folder_path):
 # Tải toàn bộ dữ liệu
 df_dataset = load_and_optimize_dataset(UPLOAD_FOLDER)
 total_rows = len(df_dataset)
-st.info(f"Hệ thống đã nạp **{total_rows}** dòng dữ liệu sẵn sàng tìm kiếm.")
+st.info(f"Hệ thống đã nạp **{total_rows}** dòng dữ liệu sẵn sàng tra cứu.")
 
-# Ô nhập dữ liệu (Cập nhật trực tiếp khi gõ)
-query = st.text_input(
-    "Nhập từ khóa tra cứu (Kết quả nhảy liên tục theo từng phím gõ):",
-    placeholder="Gõ từ khóa vào đây...",
+# Ô nhập liệu tự động cập nhật
+query = st_keyup(
+    "Nhập từ khóa tra cứu (Kết quả cập nhật liên tục):",
+    placeholder="Gõ từ khóa câu hỏi vào đây...",
+    debounce=200,
+    key="search_box",
 )
 
 if query and not df_dataset.empty:
@@ -138,30 +159,50 @@ if query and not df_dataset.empty:
     keywords = norm_query.split()
 
     if keywords:
-        # Tìm kiếm bằng Regex Lookahead cực nhanh trên Ma trận dữ liệu C
         regex_pattern = "".join([f"(?=.*{re.escape(k)})" for k in keywords])
-        mask = df_dataset["search_text"].str.contains(
-            regex_pattern, regex=True, na=False
-        )
-        matched_df = df_dataset[mask]
+
+        if "Chỉ tìm trong CÂU HỎI" in search_mode:
+            # Lọc ưu tiên: Chỉ quét trên cột CÂU HỎI
+            mask = df_dataset["question_search"].str.contains(
+                regex_pattern, regex=True, na=False
+            )
+            matched_df = df_dataset[mask]
+        else:
+            # Quét trên toàn bộ dữ liệu
+            mask = df_dataset["full_search"].str.contains(
+                regex_pattern, regex=True, na=False
+            )
+            matched_df = df_dataset[mask]
 
         total_found = len(matched_df)
 
         if total_found > 0:
-            st.success(f"⚡ Tìm thấy **{total_found}** kết quả:")
+            st.success(
+                f"🎯 Tìm thấy **{total_found}** kết quả phù hợp ({search_mode}):"
+            )
 
-            # Lấy tối đa 30 kết quả đầu tiên để render siêu tốc
             display_records = matched_df.head(30).to_dict("records")
 
             for res in display_records:
-                title_label = f"📄 File: {res['file_name']} | Sheet: {res['sheet']} | Dòng: {res['row_index']}"
+                # Lấy riêng nội dung câu hỏi hiển thị lên tiêu đề cho dễ nhìn
+                question_preview = res["data_dict"].get(
+                    "CÂU HỎI", "Chi tiết dòng"
+                )
+                if len(question_preview) > 90:
+                    question_preview = question_preview[:90] + "..."
+
+                title_label = f"❓ {question_preview} | 📄 {res['file_name']} (Dòng {res['row_index']})"
+
                 with st.expander(f"📌 **{title_label}**"):
                     for col_title, val in res["data_dict"].items():
-                        st.write(f"- **{col_title}:** {val}")
+                        if "ĐÁP ÁN ĐÚNG" in col_title.upper():
+                            st.markdown(f"- 🔴 **{col_title}:** **{val}**")
+                        else:
+                            st.write(f"- **{col_title}:** {val}")
 
             if total_found > 30:
                 st.caption(
-                    f"💡 Đang hiển thị 30/{total_found} kết quả. Hãy gõ tiếp để thu hẹp tìm kiếm."
+                    f"💡 Đang hiển thị 30/{total_found} kết quả. Hãy gõ thêm từ khóa để thu hẹp kết quả."
                 )
         else:
-            st.warning("Không tìm thấy kết quả phù hợp.")
+            st.warning("Không tìm thấy câu hỏi nào chứa từ khóa trên.")
