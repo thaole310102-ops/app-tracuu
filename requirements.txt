@@ -6,3 +6,7 @@ pypdf2
 streamlit
 pandas
 openpyxl
+streamlit
+pandas
+openpyxl
+streamlit-keyup
