@@ -6,8 +6,8 @@ from st_keyup import st_keyup
 
 # 1. Cấu hình trang
 st.set_page_config(
-    page_title="Tra Cứu Nhanh Đề Thi - Tác giả Eira",
-    page_icon="🎯",
+    page_title="Tra Cứu Siêu Tốc - Tác giả Eira",
+    page_icon="⚡",
     layout="wide",
 )
 
@@ -27,11 +27,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🎯 Hệ Thống Tra Cứu Đề Thi Siêu Tốc")
-st.caption("✨ **Tác giả:** Eira | Tìm kiếm thông minh 75% Nghiệp vụ & 25% Kiến thức chung")
+st.title("⚡ Hệ Thống Tra Cứu Tốc Độ Cao (Ưu Tiên 75% Nghiệp Vụ)")
+st.caption("✨ **Tác giả:** Eira | Đã tối ưu Bộ Nhớ Đệm - Tìm kiếm tức thì")
 
 
-# Hàm bỏ dấu tiếng Việt chuẩn xác
+# Hàm bỏ dấu tiếng Việt siêu nhanh
 def remove_accents(input_str):
     if not isinstance(input_str, str):
         input_str = str(input_str)
@@ -52,7 +52,7 @@ STANDARD_HEADERS = [
 ]
 
 
-# Hàm xử lý file Excel phân loại danh mục
+# Hàm xử lý file Excel (Chỉ chạy 1 lần duy nhất khi bấm nạp)
 def process_category_files(uploaded_files, category_label, priority_rank):
     records = []
     if not uploaded_files:
@@ -98,7 +98,7 @@ def process_category_files(uploaded_files, category_label, priority_rank):
                         records.append(
                             {
                                 "category": category_label,
-                                "priority": priority_rank,  # 1 cho Nghiệp vụ, 2 cho Kiến thức chung
+                                "priority": priority_rank,
                                 "file_name": uploaded_file.name,
                                 "sheet": sheet_name,
                                 "row_index": idx + 1,
@@ -113,7 +113,11 @@ def process_category_files(uploaded_files, category_label, priority_rank):
     return records
 
 
-# Thanh Sidebar đơn giản hóa tối đa
+# Khởi tạo bộ nhớ đệm Session State nếu chưa có
+if "df_dataset" not in st.session_state:
+    st.session_state.df_dataset = pd.DataFrame()
+
+# Thanh Sidebar
 with st.sidebar:
     st.markdown("### ✍️ **Tác giả:** Eira")
     st.divider()
@@ -121,7 +125,7 @@ with st.sidebar:
     st.header("⚙️ Chế độ tra cứu")
     search_field = st.radio(
         "Phạm vi tìm kiếm:",
-        ["Chỉ tìm trong CÂU HỎI (Khuyên dùng)", "Tìm trong TOÀN BỘ (Cả Đáp án)"],
+        ["Chỉ tìm trong CÂU HỎI (Nhanh nhất)", "Tìm trong TOÀN BỘ (Cả Đáp án)"],
         index=0,
     )
 
@@ -143,56 +147,71 @@ with st.sidebar:
         key="files_kt",
     )
 
-# Xử lý gộp dữ liệu
-all_records = []
-if file_nghiep_vu:
-    all_records.extend(process_category_files(file_nghiep_vu, "📘 NGHIỆP VỤ", 1))
+    # Nút bấm Nạp Dữ Liệu để ép chỉ đọc Excel đúng 1 lần
+    if st.button("🚀 NẠP DỮ LIỆU ĐỂ TÌM KIẾM", type="primary"):
+        with st.spinner("Đang xử lý dữ liệu... Vui lòng đợi vài giây"):
+            all_records = []
+            if file_nghiep_vu:
+                all_records.extend(
+                    process_category_files(file_nghiep_vu, "📘 NGHIỆP VỤ", 1)
+                )
 
-if files_kien_thuc:
-    all_records.extend(process_category_files(files_kien_thuc, "📚 KIẾN THỨC CHUNG", 2))
+            if files_kien_thuc:
+                all_records.extend(
+                    process_category_files(
+                        files_kien_thuc, "📚 KIẾN THỨC CHUNG", 2
+                    )
+                )
 
-if all_records:
-    df_dataset = pd.DataFrame(all_records)
-    total_rows = len(df_dataset)
-    st.success(f"✅ Đã sẵn sàng tra cứu **{total_rows}** câu hỏi từ tất cả các file!")
+            if all_records:
+                st.session_state.df_dataset = pd.DataFrame(all_records)
+                st.success("✅ Nạp dữ liệu hoàn tất! Bắt đầu tìm kiếm.")
+            else:
+                st.warning("Bạn chưa chọn file Excel nào.")
+
+# Kiểm tra dữ liệu đã nạp chưa
+if not st.session_state.df_dataset.empty:
+    total_rows = len(st.session_state.df_dataset)
+    st.success(f"✅ Hệ thống sẵn sàng với **{total_rows}** câu hỏi đã được lưu vào bộ nhớ siêu tốc!")
 else:
-    df_dataset = pd.DataFrame()
-    st.info("👈 Hãy tải file Nghiệp vụ và Kiến thức chung ở thanh menu bên trái để bắt đầu.")
+    st.info("👈 Hãy chọn file ở thanh bên trái và bấm nút **'🚀 NẠP DỮ LIỆU ĐỂ TÌM KIẾM'**.")
 
 # Ô tìm kiếm phản hồi tức thì
 query = st_keyup(
-    "Nhập từ khóa câu hỏi cần tìm trong bài thi:",
-    placeholder="Gõ vài từ khóa chính trong câu hỏi...",
-    debounce=200,
+    "Nhập từ khóa tra cứu câu hỏi:",
+    placeholder="Gõ từ khóa vào đây (Ví dụ: quy trinh, dinh muc, thoi gian...)",
+    debounce=250,
     key="search_box",
 )
 
-if query and not df_dataset.empty:
+if query and not st.session_state.df_dataset.empty:
     norm_query = remove_accents(query)
     keywords = norm_query.split()
 
     if keywords:
         regex_pattern = "".join([f"(?=.*{re.escape(k)})" for k in keywords])
 
+        df_search = st.session_state.df_dataset
+
         if "Chỉ tìm trong CÂU HỎI" in search_field:
-            mask = df_dataset["question_search"].str.contains(
+            mask = df_search["question_search"].str.contains(
                 regex_pattern, regex=True, na=False
             )
         else:
-            mask = df_dataset["full_search"].str.contains(
+            mask = df_search["full_search"].str.contains(
                 regex_pattern, regex=True, na=False
             )
 
-        matched_df = df_dataset[mask]
+        matched_df = df_search[mask]
 
-        # Ưu tiên sắp xếp câu Nghiệp vụ (75%) hiển thị lên trước
+        # Sắp xếp ưu tiên câu Nghiệp vụ (75%) lên trước
         matched_df = matched_df.sort_values(by="priority")
         total_found = len(matched_df)
 
         if total_found > 0:
             st.success(f"🎯 Tìm thấy **{total_found}** kết quả phù hợp:")
 
-            display_records = matched_df.head(25).to_dict("records")
+            display_records = matched_df.head(20).to_dict("records")
 
             for res in display_records:
                 question_preview = res["data_dict"].get(
@@ -210,11 +229,11 @@ if query and not df_dataset.empty:
                         else:
                             st.write(f"- **{col_title}:** {val}")
 
-            if total_found > 25:
+            if total_found > 20:
                 st.caption(
-                    f"💡 Đang hiển thị 25/{total_found} kết quả. Hãy gõ thêm từ khóa để tìm chính xác nhất."
+                    f"💡 Đang hiển thị 20/{total_found} kết quả. Hãy nhập thêm từ khóa để tìm chính xác hơn."
                 )
         else:
-            st.warning("Không tìm thấy kết quả nào phù hợp.")
-elif query and df_dataset.empty:
-    st.warning("Bạn chưa tải tệp dữ liệu nào lên hệ thống!")
+            st.warning("Không tìm thấy kết quả phù hợp.")
+elif query and st.session_state.df_dataset.empty:
+    st.warning("Vui lòng bấm nút '🚀 NẠP DỮ LIỆU ĐỂ TÌM KIẾM' ở menu bên trái trước!")
