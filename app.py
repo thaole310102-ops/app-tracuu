@@ -1,4 +1,3 @@
-import os
 import re
 import unicodedata
 import pandas as pd
@@ -7,22 +6,17 @@ from st_keyup import st_keyup
 
 # 1. Cấu hình trang
 st.set_page_config(
-    page_title="Tra Cứu Chính Xác - Tác giả Eira",
+    page_title="Tra Cứu Cực Nhanh - Tác giả Eira",
     page_icon="🎯",
     layout="wide",
 )
 
-# 2. Mã CSS sửa lỗi: Giữ lại menu chức năng, chỉ ẩn footer & thông tin tài khoản
+# 2. CSS Ẩn thông tin tài khoản & tối ưu giao diện
 st.markdown(
     """
     <style>
-    /* Ẩn Footer mặc định của Streamlit */
     footer {visibility: hidden;}
-    
-    /* Ẩn thanh biểu tượng Streamlit góc trên bên phải */
     #MainMenu {visibility: hidden;}
-    
-    /* Ẩn chỉ riêng phần thông tin Profile/Email đăng nhập dưới góc Sidebar */
     section[data-testid="stSidebar"] div[class*="viewerBadge"],
     section[data-testid="stSidebar"] div[class*="profile"] {
         display: none !important;
@@ -35,38 +29,8 @@ st.markdown(
 st.title("🎯 Hệ Thống Tra Cứu Câu Hỏi & Đáp Án")
 st.caption("✨ **Tác giả:** Eira")
 
-UPLOAD_FOLDER = "./documents"
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
 
-# Thanh Sidebar Upload file & Cấu hình
-with st.sidebar:
-    st.markdown("### ✍️ **Tác giả:** Eira")
-    st.divider()
-    st.header("⚙️ Chế độ tra cứu")
-    search_mode = st.radio(
-        "Phạm vi tìm kiếm:",
-        ["Chỉ tìm trong CÂU HỎI (Khuyên dùng)", "Tìm trong TOÀN BỘ (Cả Đáp án)"],
-        index=0,
-    )
-    st.divider()
-    st.header("📁 Tải tệp lên hệ thống")
-    uploaded_files = st.file_uploader(
-        "Chọn tệp Excel (.xlsx, .xls)",
-        type=["xlsx", "xls"],
-        accept_multiple_files=True,
-    )
-
-    if uploaded_files:
-        for uploaded_file in uploaded_files:
-            file_path = os.path.join(UPLOAD_FOLDER, uploaded_file.name)
-            with open(file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-        st.success(f"Đã lưu {len(uploaded_files)} tệp!")
-        st.cache_data.clear()
-
-
-# Hàm bỏ dấu tiếng Việt chuẩn xác
+# Hàm bỏ dấu tiếng Việt
 def remove_accents(input_str):
     if not isinstance(input_str, str):
         input_str = str(input_str)
@@ -87,20 +51,12 @@ STANDARD_HEADERS = [
 ]
 
 
-# Tách riêng trường văn bản CÂU HỎI và NỘI DUNG KHÁC
-@st.cache_data
-def load_and_optimize_dataset(folder_path):
+# Hàm xử lý file Excel trực tiếp trong RAM riêng của người dùng
+def process_uploaded_files(uploaded_files):
     records = []
-    files = [
-        f
-        for f in os.listdir(folder_path)
-        if f.endswith((".xlsx", ".xls")) and not f.startswith("~$")
-    ]
-
-    for file_name in files:
-        file_path = os.path.join(folder_path, file_name)
+    for uploaded_file in uploaded_files:
         try:
-            excel_data = pd.read_excel(file_path, sheet_name=None, header=None)
+            excel_data = pd.read_excel(uploaded_file, sheet_name=None, header=None)
             for sheet_name, df in excel_data.items():
                 df = df.fillna("")
                 for idx, row in df.iterrows():
@@ -119,13 +75,11 @@ def load_and_optimize_dataset(folder_path):
                             )
                             clean_dict[header_name] = val
 
-                            # Phân loại: Lấy riêng CÂU HỎI (thường nằm ở cột 2 - index 1)
                             if header_name == "CÂU HỎI" or i == 1:
                                 question_text += " " + val
                             else:
                                 other_text += " " + val
 
-                    # Bỏ các dòng tiêu đề trùng lặp
                     if (
                         "STT" in clean_dict.values()
                         or "CÂU HỎI" in clean_dict.values()
@@ -136,7 +90,7 @@ def load_and_optimize_dataset(folder_path):
                         full_row_text = " ".join(clean_dict.values())
                         records.append(
                             {
-                                "file_name": file_name,
+                                "file_name": uploaded_file.name,
                                 "sheet": sheet_name,
                                 "row_index": idx + 1,
                                 "data_dict": clean_dict,
@@ -162,16 +116,40 @@ def load_and_optimize_dataset(folder_path):
     return pd.DataFrame(records)
 
 
-# Tải toàn bộ dữ liệu
-df_dataset = load_and_optimize_dataset(UPLOAD_FOLDER)
-total_rows = len(df_dataset)
-st.info(f"Hệ thống đã nạp **{total_rows}** dòng dữ liệu sẵn sàng tra cứu.")
+# Thanh Sidebar
+with st.sidebar:
+    st.markdown("### ✍️ **Tác giả:** Eira")
+    st.divider()
+    st.header("⚙️ Chế độ tra cứu")
+    search_mode = st.radio(
+        "Phạm vi tìm kiếm:",
+        ["Chỉ tìm trong CÂU HỎI (Khuyên dùng)", "Tìm trong TOÀN BỘ (Cả Đáp án)"],
+        index=0,
+    )
+    st.divider()
+    st.header("📁 Tải tệp dữ liệu cá nhân")
+    uploaded_files = st.file_uploader(
+        "Chọn các tệp Excel (.xlsx, .xls)",
+        type=["xlsx", "xls"],
+        accept_multiple_files=True,
+    )
 
-# Ô nhập liệu tự động cập nhật
+# Xử lý dữ liệu riêng cho thiết bị/phiên làm việc hiện tại
+if uploaded_files:
+    df_dataset = process_uploaded_files(uploaded_files)
+    total_rows = len(df_dataset)
+    st.success(
+        f"✅ Đã nạp thành công **{total_rows}** dòng dữ liệu từ {len(uploaded_files)} tệp của bạn."
+    )
+else:
+    df_dataset = pd.DataFrame()
+    st.info("👈 Hãy tải (upload) tệp Excel của bạn ở thanh menu bên trái để bắt đầu tra cứu.")
+
+# Ô tìm kiếm phản hồi mượt mà
 query = st_keyup(
-    "Nhập từ khóa tra cứu (Kết quả cập nhật liên tục):",
+    "Nhập từ khóa tra cứu (Tự động cập nhật kết quả):",
     placeholder="Gõ từ khóa câu hỏi vào đây...",
-    debounce=200,
+    debounce=250,
     key="search_box",
 )
 
@@ -183,29 +161,23 @@ if query and not df_dataset.empty:
         regex_pattern = "".join([f"(?=.*{re.escape(k)})" for k in keywords])
 
         if "Chỉ tìm trong CÂU HỎI" in search_mode:
-            # Lọc ưu tiên: Chỉ quét trên cột CÂU HỎI
             mask = df_dataset["question_search"].str.contains(
                 regex_pattern, regex=True, na=False
             )
-            matched_df = df_dataset[mask]
         else:
-            # Quét trên toàn bộ dữ liệu
             mask = df_dataset["full_search"].str.contains(
                 regex_pattern, regex=True, na=False
             )
-            matched_df = df_dataset[mask]
 
+        matched_df = df_dataset[mask]
         total_found = len(matched_df)
 
         if total_found > 0:
-            st.success(
-                f"🎯 Tìm thấy **{total_found}** kết quả phù hợp ({search_mode}):"
-            )
+            st.success(f"🎯 Tìm thấy **{total_found}** kết quả phù hợp:")
 
-            display_records = matched_df.head(30).to_dict("records")
+            display_records = matched_df.head(25).to_dict("records")
 
             for res in display_records:
-                # Lấy riêng nội dung câu hỏi hiển thị lên tiêu đề cho dễ nhìn
                 question_preview = res["data_dict"].get(
                     "CÂU HỎI", "Chi tiết dòng"
                 )
@@ -221,9 +193,11 @@ if query and not df_dataset.empty:
                         else:
                             st.write(f"- **{col_title}:** {val}")
 
-            if total_found > 30:
+            if total_found > 25:
                 st.caption(
-                    f"💡 Đang hiển thị 30/{total_found} kết quả. Hãy gõ thêm từ khóa để thu hẹp kết quả."
+                    f"💡 Đang hiển thị 25/{total_found} kết quả. Hãy gõ thêm từ khóa để thu hẹp kết quả."
                 )
         else:
             st.warning("Không tìm thấy câu hỏi nào chứa từ khóa trên.")
+elif query and df_dataset.empty:
+    st.warning("Bạn chưa tải tệp dữ liệu nào lên hệ thống!")
