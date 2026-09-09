@@ -6,12 +6,12 @@ from st_keyup import st_keyup
 
 # 1. Cấu hình trang
 st.set_page_config(
-    page_title="Tra Cứu Cực Nhanh - Tác giả Eira",
+    page_title="Tra Cứu Nhanh Đề Thi - Tác giả Eira",
     page_icon="🎯",
     layout="wide",
 )
 
-# 2. CSS Ẩn thông tin tài khoản & tối ưu giao diện
+# 2. CSS Ẩn thông tin cá nhân & tối ưu giao diện
 st.markdown(
     """
     <style>
@@ -21,16 +21,17 @@ st.markdown(
     section[data-testid="stSidebar"] div[class*="profile"] {
         display: none !important;
     }
+    .stAlert { padding: 10px; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title("🎯 Hệ Thống Tra Cứu Câu Hỏi & Đáp Án")
-st.caption("✨ **Tác giả:** Eira")
+st.title("🎯 Hệ Thống Tra Cứu Đề Thi Siêu Tốc")
+st.caption("✨ **Tác giả:** Eira | Tìm kiếm thông minh 75% Nghiệp vụ & 25% Kiến thức chung")
 
 
-# Hàm bỏ dấu tiếng Việt
+# Hàm bỏ dấu tiếng Việt chuẩn xác
 def remove_accents(input_str):
     if not isinstance(input_str, str):
         input_str = str(input_str)
@@ -51,9 +52,15 @@ STANDARD_HEADERS = [
 ]
 
 
-# Hàm xử lý file Excel trực tiếp trong RAM riêng của người dùng
-def process_uploaded_files(uploaded_files):
+# Hàm xử lý file Excel phân loại danh mục
+def process_category_files(uploaded_files, category_label, priority_rank):
     records = []
+    if not uploaded_files:
+        return records
+
+    if not isinstance(uploaded_files, list):
+        uploaded_files = [uploaded_files]
+
     for uploaded_file in uploaded_files:
         try:
             excel_data = pd.read_excel(uploaded_file, sheet_name=None, header=None)
@@ -90,6 +97,8 @@ def process_uploaded_files(uploaded_files):
                         full_row_text = " ".join(clean_dict.values())
                         records.append(
                             {
+                                "category": category_label,
+                                "priority": priority_rank,  # 1 cho Nghiệp vụ, 2 cho Kiến thức chung
                                 "file_name": uploaded_file.name,
                                 "sheet": sheet_name,
                                 "row_index": idx + 1,
@@ -101,55 +110,60 @@ def process_uploaded_files(uploaded_files):
         except Exception:
             pass
 
-    if not records:
-        return pd.DataFrame(
-            columns=[
-                "file_name",
-                "sheet",
-                "row_index",
-                "data_dict",
-                "question_search",
-                "full_search",
-            ]
-        )
-
-    return pd.DataFrame(records)
+    return records
 
 
-# Thanh Sidebar
+# Thanh Sidebar đơn giản hóa tối đa
 with st.sidebar:
     st.markdown("### ✍️ **Tác giả:** Eira")
     st.divider()
+
     st.header("⚙️ Chế độ tra cứu")
-    search_mode = st.radio(
+    search_field = st.radio(
         "Phạm vi tìm kiếm:",
         ["Chỉ tìm trong CÂU HỎI (Khuyên dùng)", "Tìm trong TOÀN BỘ (Cả Đáp án)"],
         index=0,
     )
+
     st.divider()
-    st.header("📁 Tải tệp dữ liệu cá nhân")
-    uploaded_files = st.file_uploader(
-        "Chọn các tệp Excel (.xlsx, .xls)",
+    st.header("📁 Tải tệp dữ liệu")
+
+    st.markdown("**1. 📘 File Nghiệp Vụ (75%)**")
+    file_nghiep_vu = st.file_uploader(
+        "Tải 1 file Nghiệp vụ",
+        type=["xlsx", "xls"],
+        key="file_nv",
+    )
+
+    st.markdown("**2. 📚 Files Kiến Thức Chung (25%)**")
+    files_kien_thuc = st.file_uploader(
+        "Tải các file Kiến thức chung",
         type=["xlsx", "xls"],
         accept_multiple_files=True,
+        key="files_kt",
     )
 
-# Xử lý dữ liệu riêng cho thiết bị/phiên làm việc hiện tại
-if uploaded_files:
-    df_dataset = process_uploaded_files(uploaded_files)
+# Xử lý gộp dữ liệu
+all_records = []
+if file_nghiep_vu:
+    all_records.extend(process_category_files(file_nghiep_vu, "📘 NGHIỆP VỤ", 1))
+
+if files_kien_thuc:
+    all_records.extend(process_category_files(files_kien_thuc, "📚 KIẾN THỨC CHUNG", 2))
+
+if all_records:
+    df_dataset = pd.DataFrame(all_records)
     total_rows = len(df_dataset)
-    st.success(
-        f"✅ Đã nạp thành công **{total_rows}** dòng dữ liệu từ {len(uploaded_files)} tệp của bạn."
-    )
+    st.success(f"✅ Đã sẵn sàng tra cứu **{total_rows}** câu hỏi từ tất cả các file!")
 else:
     df_dataset = pd.DataFrame()
-    st.info("👈 Hãy tải (upload) tệp Excel của bạn ở thanh menu bên trái để bắt đầu tra cứu.")
+    st.info("👈 Hãy tải file Nghiệp vụ và Kiến thức chung ở thanh menu bên trái để bắt đầu.")
 
-# Ô tìm kiếm phản hồi mượt mà
+# Ô tìm kiếm phản hồi tức thì
 query = st_keyup(
-    "Nhập từ khóa tra cứu (Tự động cập nhật kết quả):",
-    placeholder="Gõ từ khóa câu hỏi vào đây...",
-    debounce=250,
+    "Nhập từ khóa câu hỏi cần tìm trong bài thi:",
+    placeholder="Gõ vài từ khóa chính trong câu hỏi...",
+    debounce=200,
     key="search_box",
 )
 
@@ -160,7 +174,7 @@ if query and not df_dataset.empty:
     if keywords:
         regex_pattern = "".join([f"(?=.*{re.escape(k)})" for k in keywords])
 
-        if "Chỉ tìm trong CÂU HỎI" in search_mode:
+        if "Chỉ tìm trong CÂU HỎI" in search_field:
             mask = df_dataset["question_search"].str.contains(
                 regex_pattern, regex=True, na=False
             )
@@ -170,6 +184,9 @@ if query and not df_dataset.empty:
             )
 
         matched_df = df_dataset[mask]
+
+        # Ưu tiên sắp xếp câu Nghiệp vụ (75%) hiển thị lên trước
+        matched_df = matched_df.sort_values(by="priority")
         total_found = len(matched_df)
 
         if total_found > 0:
@@ -181,10 +198,10 @@ if query and not df_dataset.empty:
                 question_preview = res["data_dict"].get(
                     "CÂU HỎI", "Chi tiết dòng"
                 )
-                if len(question_preview) > 90:
-                    question_preview = question_preview[:90] + "..."
+                if len(question_preview) > 85:
+                    question_preview = question_preview[:85] + "..."
 
-                title_label = f"❓ {question_preview} | 📄 {res['file_name']} (Dòng {res['row_index']})"
+                title_label = f"[{res['category']}] ❓ {question_preview} | 📄 {res['file_name']} (Dòng {res['row_index']})"
 
                 with st.expander(f"📌 **{title_label}**"):
                     for col_title, val in res["data_dict"].items():
@@ -195,9 +212,9 @@ if query and not df_dataset.empty:
 
             if total_found > 25:
                 st.caption(
-                    f"💡 Đang hiển thị 25/{total_found} kết quả. Hãy gõ thêm từ khóa để thu hẹp kết quả."
+                    f"💡 Đang hiển thị 25/{total_found} kết quả. Hãy gõ thêm từ khóa để tìm chính xác nhất."
                 )
         else:
-            st.warning("Không tìm thấy câu hỏi nào chứa từ khóa trên.")
+            st.warning("Không tìm thấy kết quả nào phù hợp.")
 elif query and df_dataset.empty:
     st.warning("Bạn chưa tải tệp dữ liệu nào lên hệ thống!")
